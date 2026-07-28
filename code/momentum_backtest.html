@@ -1,0 +1,864 @@
+<title>Time-Series Momentum Backtest</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-page:   #f9f9f7;
+    --surface-card:   #fcfcfb;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --series-strat:   #2a78d6;
+    --series-bench:   #9a988e;
+    --series-crit:    #d03b3b;
+    --series-crit-fill: rgba(208,59,59,0.14);
+    --good:           #006300;
+    --border:         rgba(11,11,11,0.10);
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-page:   #0d0d0d;
+      --surface-card:   #1a1a19;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --series-strat:   #3987e5;
+      --series-bench:   #7d7b71;
+      --series-crit:    #e66767;
+      --series-crit-fill: rgba(230,103,103,0.16);
+      --good:           #0ca30c;
+      --border:         rgba(255,255,255,0.10);
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-page:   #0d0d0d;
+    --surface-card:   #1a1a19;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --series-strat:   #3987e5;
+    --series-bench:   #7d7b71;
+    --series-crit:    #e66767;
+    --series-crit-fill: rgba(230,103,103,0.16);
+    --good:           #0ca30c;
+    --border:         rgba(255,255,255,0.10);
+  }
+
+  * { box-sizing: border-box; }
+  .viz-root {
+    background: var(--surface-page);
+    color: var(--text-primary);
+    font-family: var(--sans);
+    padding: clamp(16px, 4vw, 40px);
+    max-width: 980px;
+    margin: 0 auto;
+  }
+  .masthead {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 18px;
+    margin-bottom: 22px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 0 0 8px;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(24px, 3.4vw, 32px);
+    line-height: 1.15;
+    margin: 0 0 8px;
+    text-wrap: balance;
+  }
+  .subhead {
+    font-size: 14px;
+    color: var(--text-secondary);
+    max-width: 62ch;
+    line-height: 1.5;
+    margin: 0;
+  }
+  .rules {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 10px;
+    margin: 18px 0 28px;
+  }
+  .rule-card {
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+  }
+  .rule-card b { color: var(--text-primary); font-weight: 600; }
+
+  h2.section-title {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: 19px;
+    margin: 0 0 4px;
+  }
+  p.section-sub {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin: 0 0 14px;
+    max-width: 68ch;
+  }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .stat-grid.secondary { grid-template-columns: repeat(4, 1fr); margin-bottom: 26px; }
+  @media (max-width: 640px) {
+    .stat-grid, .stat-grid.secondary { grid-template-columns: repeat(2, 1fr); }
+  }
+  .stat-card {
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .stat-label {
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 0 0 6px;
+  }
+  .stat-value {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(20px, 2.6vw, 27px);
+    font-weight: 600;
+    margin: 0;
+    line-height: 1;
+  }
+  .stat-grid.secondary .stat-value { font-size: 18px; }
+  .stat-explain {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 8px 0 0;
+    line-height: 1.45;
+  }
+
+  .chart-card {
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 18px 8px;
+    margin-bottom: 22px;
+  }
+  .chart-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .chart-title {
+    font-family: var(--serif);
+    font-size: 17px;
+    margin: 0;
+  }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 14px; height: 2px; border-radius: 2px; display: inline-block; }
+  .chart-wrap { position: relative; }
+  svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
+  .axis-label { font-family: var(--mono); font-size: 10px; fill: var(--text-muted); }
+  .grid-line { stroke: var(--gridline); stroke-width: 1; }
+  .baseline { stroke: var(--baseline); stroke-width: 1; }
+  .crosshair { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; }
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-page);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+    opacity: 0;
+    transition: opacity 0.1s;
+    white-space: nowrap;
+    z-index: 5;
+  }
+  .tooltip .t-date { color: var(--text-muted); font-family: var(--mono); font-size: 10.5px; margin-bottom: 3px; }
+  .tooltip .t-row { display: flex; justify-content: space-between; gap: 14px; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .dd-caption { font-size: 11px; color: var(--text-muted); margin: 4px 0 10px; font-family: var(--mono); }
+
+  .explain-list { list-style: none; margin: 0 0 26px; padding: 0; display: grid; gap: 10px; }
+  .explain-list li {
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--series-strat);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+  }
+  .explain-list b { color: var(--text-primary); font-weight: 600; }
+
+  .table-card {
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 22px;
+  }
+  details.table-card summary {
+    cursor: pointer;
+    font-family: var(--serif);
+    font-size: 15px;
+    color: var(--text-primary);
+    outline: none;
+  }
+  .table-scroll { overflow-x: auto; }
+  table.data-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 12.5px;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+  table.data-table th, table.data-table td {
+    text-align: right;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--gridline);
+    white-space: nowrap;
+  }
+  table.data-table th:first-child, table.data-table td:first-child { text-align: left; font-family: var(--sans); }
+  table.data-table th { color: var(--text-muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  table.data-table tr.headline td { color: var(--text-primary); font-weight: 600; }
+  table.data-table tr.headline { background: color-mix(in srgb, var(--series-strat) 8%, transparent); }
+  table.data-table td.best { color: var(--good); font-weight: 600; }
+  .pos { color: var(--good); }
+  .neg { color: var(--series-crit); }
+
+  .check-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .check-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+  .check-pill {
+    flex: none;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 2px 7px;
+    border-radius: 5px;
+    margin-top: 1px;
+  }
+  .check-pill.pass { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+  .check-pill.fail { color: var(--series-crit); background: color-mix(in srgb, var(--series-crit) 14%, transparent); }
+  .check-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: var(--text-primary);
+  }
+
+  footer.note {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+    line-height: 1.6;
+  }
+</style>
+
+<div class="viz-root">
+  <div class="masthead">
+    <p class="eyebrow">Quant Research &middot; Backtest Note</p>
+    <h1>Time-Series Momentum &amp; MA Crossover on a Simulated Equity Index</h1>
+    <p class="subhead">Trailing-return momentum at three lookbacks, plus a 20/100-day moving-average crossover, all executed next day with a 1&nbsp;bp cost per unit of position traded. No real-time market data feed is connected in this environment, so prices below are a calibrated simulation, not live data &mdash; methodology holds regardless of the data source.</p>
+  </div>
+
+  <div class="rules">
+    <div class="rule-card"><b>Momentum signal.</b> At the close of day t, compute the trailing N-day return (N = 63, 126, 252). Go long if positive, short if negative.</div>
+    <div class="rule-card"><b>Crossover signal.</b> At the close of day t, compare the 20-day and 100-day moving averages. Long when fast &gt; slow, short when fast &lt; slow.</div>
+    <div class="rule-card"><b>Execution lag.</b> Every signal above is only acted on the next trading day &mdash; no look-ahead, enforced the same way for all four rules.</div>
+    <div class="rule-card"><b>Cost &amp; universe.</b> 1bp per unit of position changed, single simulated index, fully invested long or short (&plusmn;100%), no leverage.</div>
+  </div>
+
+  <h2 class="section-title">Headline strategy &mdash; 126-day momentum</h2>
+  <p class="section-sub">Shown in full below; see the comparison table further down for how it stacks up against the other three rules.</p>
+
+  <div class="stat-grid" id="stat-grid-primary"></div>
+  <div class="stat-grid secondary" id="stat-grid-secondary"></div>
+
+  <div class="chart-card">
+    <div class="chart-card-head">
+      <p class="chart-title">Equity Curve &mdash; Growth of $1</p>
+      <div class="legend">
+        <span><i style="background:var(--series-strat)"></i>126-day momentum</span>
+        <span><i style="background:var(--series-bench)"></i>Buy &amp; hold</span>
+      </div>
+    </div>
+    <div class="chart-wrap" id="equity-chart-wrap"></div>
+    <p class="dd-caption" id="dd-caption">Underwater curve (drawdown from prior peak) &mdash; strategy</p>
+    <div class="chart-wrap" id="dd-chart-wrap"></div>
+  </div>
+
+  <div class="explain-section">
+    <h2 class="section-title">What the headline numbers mean</h2>
+    <ul class="explain-list" id="explain-list"></ul>
+  </div>
+
+  <div class="table-card">
+    <h2 class="section-title">Strategy comparison</h2>
+    <p class="section-sub">All four rules share the exact same price path, cost model and 1-day execution lag, and are scored over the identical evaluation window (starting the first day every lookback &mdash; including the 252-day one &mdash; has enough history), so the comparison isn't skewed by one strategy getting a longer runway than another.</p>
+    <div class="table-scroll">
+      <table class="data-table" id="compare-table"></table>
+    </div>
+  </div>
+
+  <div class="table-card">
+    <h2 class="section-title">Self-check</h2>
+    <p class="section-sub">Automated assertions run against the actual backtest output on every load &mdash; not a description of what the code should do, but a check of what it did.</p>
+    <div class="check-summary" id="check-summary"></div>
+    <ul class="check-list" id="check-list"></ul>
+  </div>
+
+  <details class="table-card">
+    <summary>Calendar-year returns &mdash; 126-day momentum vs. buy &amp; hold</summary>
+    <div class="table-scroll" style="margin-top:12px;">
+      <table class="data-table" id="returns-table"></table>
+    </div>
+  </details>
+
+  <footer class="note" id="footnote"></footer>
+</div>
+
+<script>
+(function() {
+  "use strict";
+
+  // ================= seeded RNG (mulberry32) + Box-Muller normal =================
+  function mulberry32(seed) {
+    return function() {
+      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+      var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  var rand = mulberry32(20260728);
+  var spareNormal = null;
+  function randn() {
+    if (spareNormal !== null) { var s = spareNormal; spareNormal = null; return s; }
+    var u1 = Math.max(rand(), 1e-12), u2 = rand();
+    var r = Math.sqrt(-2 * Math.log(u1));
+    spareNormal = r * Math.sin(2 * Math.PI * u2);
+    return r * Math.cos(2 * Math.PI * u2);
+  }
+
+  // ================= trading calendar: weekdays only, ~10y ending today =================
+  function buildTradingDays(nDays) {
+    var end = new Date(2026, 6, 28); // 2026-07-28
+    var days = [];
+    var d = new Date(end);
+    while (days.length < nDays) {
+      if (d.getDay() !== 0 && d.getDay() !== 6) days.push(new Date(d));
+      d.setDate(d.getDate() - 1);
+    }
+    return days.reverse();
+  }
+  var N_YEARS = 10;
+  var N = N_YEARS * 252;
+  var dates = buildTradingDays(N);
+
+  // ================= price simulation: GBM drift + GARCH(1,1) vol clustering =================
+  var muAnnual = 0.08, sigmaAnnual = 0.18;
+  var sigmaDaily2LR = (sigmaAnnual * sigmaAnnual) / 252;
+  var alpha = 0.08, beta = 0.90;
+  var omega = sigmaDaily2LR * (1 - alpha - beta);
+  var muDaily = muAnnual / 252;
+
+  var prices = new Array(N);
+  var sigma2 = sigmaDaily2LR, lastEps = 0, p = 1000;
+  for (var i = 0; i < N; i++) {
+    sigma2 = omega + alpha * lastEps * lastEps + beta * sigma2;
+    var sigma = Math.sqrt(sigma2);
+    var z = randn();
+    var r = muDaily - 0.5 * sigma2 + sigma * z;
+    lastEps = sigma * z;
+    p = p * Math.exp(r);
+    prices[i] = p;
+  }
+  var simpleRet = new Array(N).fill(0);
+  for (var i = 1; i < N; i++) simpleRet[i] = prices[i] / prices[i - 1] - 1;
+
+  // ================= signal generators (all use only data through day i) =================
+  function momentumSignal(lookback) {
+    var s = new Array(N).fill(0);
+    for (var i = lookback; i < N; i++) {
+      var mom = prices[i] / prices[i - lookback] - 1;
+      s[i] = mom > 0 ? 1 : (mom < 0 ? -1 : 0);
+    }
+    return s;
+  }
+  function movingAverage(window) {
+    var ma = new Array(N).fill(NaN);
+    var sum = 0;
+    for (var i = 0; i < N; i++) {
+      sum += prices[i];
+      if (i >= window) sum -= prices[i - window];
+      if (i >= window - 1) ma[i] = sum / window;
+    }
+    return ma;
+  }
+  function maCrossoverSignal(fast, slow) {
+    var maFast = movingAverage(fast), maSlow = movingAverage(slow);
+    var s = new Array(N).fill(0);
+    for (var i = slow - 1; i < N; i++) {
+      if (isNaN(maFast[i]) || isNaN(maSlow[i])) continue;
+      s[i] = maFast[i] > maSlow[i] ? 1 : (maFast[i] < maSlow[i] ? -1 : 0);
+    }
+    return s;
+  }
+
+  var LOOKBACKS = [63, 126, 252];
+  var MA_FAST = 20, MA_SLOW = 100;
+  var COST_BP = 0.0001;
+  // Common evaluation window: every rule needs its own warm-up (the 252-day
+  // lookback needs the most), so all four are scored from the same first day
+  // — otherwise a shorter-lookback strategy would unfairly get extra history.
+  var COMMON_START = Math.max.apply(null, LOOKBACKS.concat([MA_SLOW])) + 1; // 253
+
+  // ================= shared backtest engine =================
+  function backtest(signalArr, start) {
+    var pos = new Array(N).fill(0);
+    var stratRet = new Array(N).fill(0);
+    var trades = 0, turnoverSum = 0;
+    var costLog = []; // for self-check: {i, deltaPos, cost}
+    for (var i = start; i < N; i++) {
+      pos[i] = signalArr[i - 1]; // 1-day execution lag: today's position = yesterday's close-of-day signal
+      var deltaPos = Math.abs(pos[i] - pos[i - 1]);
+      var cost = deltaPos * COST_BP;
+      if (deltaPos > 0) { trades++; turnoverSum += deltaPos; }
+      stratRet[i] = pos[i] * simpleRet[i] - cost;
+      costLog.push({ i: i, deltaPos: deltaPos, cost: cost });
+    }
+    var eq = new Array(N).fill(NaN);
+    eq[start] = 1;
+    for (var i = start + 1; i < N; i++) eq[i] = eq[i - 1] * (1 + stratRet[i]);
+
+    var sample = stratRet.slice(start);
+    var m = mean(sample), sd = std(sample);
+    var sharpe = (m / sd) * Math.sqrt(252);
+
+    var yrs = (N - 1 - start) / 252;
+    var turnoverAnnual = turnoverSum / yrs;
+
+    var peak = eq[start], peakIdx = start, maxDD = 0, ddTroughIdx = start, ddPeakIdx = start;
+    var underwater = new Array(N).fill(NaN);
+    for (var i = start; i < N; i++) {
+      if (eq[i] > peak) { peak = eq[i]; peakIdx = i; }
+      var dd = eq[i] / peak - 1;
+      underwater[i] = dd;
+      if (dd < maxDD) { maxDD = dd; ddTroughIdx = i; ddPeakIdx = peakIdx; }
+    }
+    var recoverIdx = -1;
+    for (var i = ddTroughIdx; i < N; i++) { if (eq[i] >= eq[ddPeakIdx]) { recoverIdx = i; break; } }
+
+    var cagr = Math.pow(eq[N - 1] / eq[start], 1 / yrs) - 1;
+    var vol = sd * Math.sqrt(252);
+    var winRate = sample.filter(function(x){return x>0;}).length / sample.length;
+
+    return {
+      pos: pos, stratRet: stratRet, eq: eq, underwater: underwater, costLog: costLog,
+      sharpe: sharpe, maxDD: maxDD, turnoverAnnual: turnoverAnnual, trades: trades,
+      cagr: cagr, vol: vol, winRate: winRate,
+      ddPeakIdx: ddPeakIdx, ddTroughIdx: ddTroughIdx, recoverIdx: recoverIdx,
+      avgHoldingDays: trades > 0 ? (N - start) / trades : 0,
+      signalArr: signalArr, start: start
+    };
+  }
+  function mean(arr) { return arr.reduce(function(a,b){return a+b;},0) / arr.length; }
+  function std(arr) {
+    var m = mean(arr);
+    return Math.sqrt(arr.reduce(function(a,b){return a + (b-m)*(b-m);},0) / (arr.length - 1));
+  }
+
+  var strategies = [
+    { key: 'mom63',  name: '63-day momentum',    result: backtest(momentumSignal(63), COMMON_START) },
+    { key: 'mom126', name: '126-day momentum',   result: backtest(momentumSignal(126), COMMON_START), headline: true },
+    { key: 'mom252', name: '252-day momentum',   result: backtest(momentumSignal(252), COMMON_START) },
+    { key: 'ma20_100', name: '20/100-day MA crossover', result: backtest(maCrossoverSignal(MA_FAST, MA_SLOW), COMMON_START) }
+  ];
+  var headline = strategies.filter(function(s){return s.headline;})[0];
+  var benchEq = new Array(N).fill(NaN);
+  benchEq[COMMON_START] = 1;
+  for (var i = COMMON_START + 1; i < N; i++) benchEq[i] = benchEq[i - 1] * (1 + simpleRet[i]);
+  var benchSample = simpleRet.slice(COMMON_START);
+  var benchCAGR = Math.pow(benchEq[N - 1] / benchEq[COMMON_START], 1 / ((N - 1 - COMMON_START) / 252)) - 1;
+
+  // ================= formatting =================
+  function pct(x, d) { return (x * 100).toFixed(d === undefined ? 1 : d) + '%'; }
+  function fmtDate(d) { return d.toLocaleDateString('en-US', {year:'numeric', month:'short'}); }
+  function fmtDateFull(d) { return d.toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'}); }
+
+  // ================= headline stat cards =================
+  var primary = document.getElementById('stat-grid-primary');
+  var hr = headline.result;
+  [
+    { label: 'Annualised Sharpe', value: hr.sharpe.toFixed(2), explain: 'return per unit of risk' },
+    { label: 'Max Drawdown', value: pct(hr.maxDD), explain: 'worst peak-to-trough decline' },
+    { label: 'Annual Turnover', value: hr.turnoverAnnual.toFixed(1) + 'x', explain: 'notional traded per year' }
+  ].forEach(function(s) {
+    var el = document.createElement('div');
+    el.className = 'stat-card';
+    el.innerHTML = '<p class="stat-label">' + s.label + '</p><p class="stat-value">' + s.value + '</p><p class="stat-explain">' + s.explain + '</p>';
+    primary.appendChild(el);
+  });
+  var secondary = document.getElementById('stat-grid-secondary');
+  [
+    { label: 'Strategy CAGR', value: pct(hr.cagr) },
+    { label: 'Buy &amp; Hold CAGR', value: pct(benchCAGR) },
+    { label: 'Strategy Vol (ann.)', value: pct(hr.vol) },
+    { label: 'Daily Win Rate', value: pct(hr.winRate) }
+  ].forEach(function(s) {
+    var el = document.createElement('div');
+    el.className = 'stat-card';
+    el.innerHTML = '<p class="stat-label">' + s.label + '</p><p class="stat-value">' + s.value + '</p>';
+    secondary.appendChild(el);
+  });
+
+  var explainList = document.getElementById('explain-list');
+  var recoveryText = hr.recoverIdx === -1
+    ? 'had not recovered to its prior peak by the end of the sample'
+    : ('recovered ' + (hr.recoverIdx - hr.ddTroughIdx) + ' trading days later');
+  [
+    '<b>Sharpe ' + hr.sharpe.toFixed(2) + '.</b> The strategy earned ' + hr.sharpe.toFixed(2) + ' units of annualised excess return for every unit of annualised volatility it took on — below 1.0 is weak, roughly 1.0 is solid, and this sits in the ' + (hr.sharpe < 0.3 ? 'weak' : hr.sharpe < 0.7 ? 'modest' : 'solid') + ' range for a single-asset trend rule.',
+    '<b>Max drawdown ' + pct(hr.maxDD) + '.</b> The strategy’s worst loss from a prior equity peak was ' + pct(Math.abs(hr.maxDD)) + ', reached over ' + (hr.ddTroughIdx - hr.ddPeakIdx) + ' trading days and ' + recoveryText + '.',
+    '<b>Turnover ' + hr.turnoverAnnual.toFixed(1) + 'x/yr.</b> The position was fully bought and sold the equivalent of ' + hr.turnoverAnnual.toFixed(1) + ' times per year (' + hr.trades + ' trades total, ~' + Math.round(hr.avgHoldingDays) + ' trading days between flips) — at 1bp per unit traded that alone costs about ' + pct(hr.turnoverAnnual * COST_BP, 2) + ' of return per year.'
+  ].forEach(function(html) {
+    var li = document.createElement('li');
+    li.innerHTML = html;
+    explainList.appendChild(li);
+  });
+
+  // ================= SVG line chart helper =================
+  function makeLineChart(container, series, opts) {
+    var W = 900, H = opts.height || 260, padL = 44, padR = 12, padT = 14, padB = 24;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var xs = series.idx;
+    var x0 = xs[0], x1 = xs[xs.length - 1];
+    function xScale(i) { return padL + (i - x0) / (x1 - x0) * plotW; }
+    var yMin = opts.yMin, yMax = opts.yMax, yLog = opts.log;
+    function yScale(v) {
+      if (yLog) return padT + (Math.log(yMax) - Math.log(v)) / (Math.log(yMax) - Math.log(yMin)) * plotH;
+      return padT + (yMax - v) / (yMax - yMin) * plotH;
+    }
+    var svgNS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.setAttribute('class', 'chart');
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+    opts.yTicks.forEach(function(t) {
+      var y = yScale(t.v);
+      var gl = document.createElementNS(svgNS, 'line');
+      gl.setAttribute('x1', padL); gl.setAttribute('x2', W - padR);
+      gl.setAttribute('y1', y); gl.setAttribute('y2', y);
+      gl.setAttribute('class', t.base ? 'baseline' : 'grid-line');
+      svg.appendChild(gl);
+      var lab = document.createElementNS(svgNS, 'text');
+      lab.setAttribute('x', padL - 6); lab.setAttribute('y', y + 3);
+      lab.setAttribute('text-anchor', 'end');
+      lab.setAttribute('class', 'axis-label');
+      lab.textContent = t.label;
+      svg.appendChild(lab);
+    });
+
+    var yearSeen = {};
+    xs.forEach(function(i) {
+      var yr = dates[i].getFullYear();
+      if (!yearSeen[yr] && dates[i].getMonth() === 0) {
+        yearSeen[yr] = true;
+        var x = xScale(i);
+        var lab = document.createElementNS(svgNS, 'text');
+        lab.setAttribute('x', x); lab.setAttribute('y', H - 4);
+        lab.setAttribute('text-anchor', 'middle');
+        lab.setAttribute('class', 'axis-label');
+        lab.textContent = yr;
+        svg.appendChild(lab);
+      }
+    });
+
+    series.lines.forEach(function(line) {
+      var d = '';
+      xs.forEach(function(i) {
+        var v = line.data[i];
+        if (isNaN(v)) return;
+        var cmd = (d === '') ? 'M' : 'L';
+        d += cmd + xScale(i).toFixed(2) + ',' + yScale(Math.max(v, yMin)).toFixed(2) + ' ';
+      });
+      if (line.fill) {
+        var area = document.createElementNS(svgNS, 'path');
+        var dArea = d + 'L' + xScale(x1).toFixed(2) + ',' + yScale(yMax).toFixed(2) + ' L' + xScale(x0).toFixed(2) + ',' + yScale(yMax).toFixed(2) + ' Z';
+        area.setAttribute('d', dArea);
+        area.setAttribute('fill', line.fillColor);
+        area.setAttribute('stroke', 'none');
+        svg.appendChild(area);
+      }
+      var path = document.createElementNS(svgNS, 'path');
+      path.setAttribute('d', d.trim());
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', line.color);
+      path.setAttribute('stroke-width', 2);
+      path.setAttribute('stroke-linejoin', 'round');
+      path.setAttribute('stroke-linecap', 'round');
+      svg.appendChild(path);
+    });
+
+    var crosshair = document.createElementNS(svgNS, 'line');
+    crosshair.setAttribute('class', 'crosshair');
+    crosshair.setAttribute('y1', padT); crosshair.setAttribute('y2', H - padB);
+    svg.appendChild(crosshair);
+    var dots = series.lines.map(function(line) {
+      var c = document.createElementNS(svgNS, 'circle');
+      c.setAttribute('r', 3.5); c.setAttribute('fill', line.color); c.setAttribute('opacity', 0);
+      svg.appendChild(c);
+      return c;
+    });
+    var overlay = document.createElementNS(svgNS, 'rect');
+    overlay.setAttribute('x', padL); overlay.setAttribute('y', padT);
+    overlay.setAttribute('width', plotW); overlay.setAttribute('height', plotH);
+    overlay.setAttribute('fill', 'transparent');
+    svg.appendChild(overlay);
+
+    container.style.position = 'relative';
+    container.appendChild(svg);
+    var tooltip = document.createElement('div');
+    tooltip.className = 'tooltip';
+    container.appendChild(tooltip);
+
+    function nearestIdx(mx) {
+      var frac = (mx - padL) / plotW;
+      var target = x0 + frac * (x1 - x0);
+      var closest = xs[0], bestDist = Infinity;
+      for (var k = 0; k < xs.length; k += Math.max(1, Math.floor(xs.length / 800))) {
+        var dist = Math.abs(xs[k] - target);
+        if (dist < bestDist) { bestDist = dist; closest = xs[k]; }
+      }
+      return closest;
+    }
+    overlay.addEventListener('mousemove', function(ev) {
+      var rect = svg.getBoundingClientRect();
+      var scaleX = W / rect.width;
+      var mx = (ev.clientX - rect.left) * scaleX;
+      var i = nearestIdx(mx);
+      var x = xScale(i);
+      crosshair.setAttribute('x1', x); crosshair.setAttribute('x2', x);
+      crosshair.style.opacity = 1;
+      var rows = '';
+      series.lines.forEach(function(line, k) {
+        var v = line.data[i];
+        if (isNaN(v)) { dots[k].setAttribute('opacity', 0); return; }
+        dots[k].setAttribute('cx', x); dots[k].setAttribute('cy', yScale(Math.max(v, yMin)));
+        dots[k].setAttribute('opacity', 1);
+        rows += '<div class="t-row"><span style="color:' + line.color + '">' + line.label + '</span><span>' + line.fmt(v) + '</span></div>';
+      });
+      tooltip.innerHTML = '<div class="t-date">' + fmtDateFull(dates[i]) + '</div>' + rows;
+      tooltip.style.opacity = 1;
+      var tw = tooltip.offsetWidth, ch = container.clientWidth;
+      var leftPx = (x / W) * ch + 12;
+      if (leftPx + tw > ch) leftPx = (x / W) * ch - tw - 12;
+      tooltip.style.left = leftPx + 'px';
+      tooltip.style.top = '8px';
+    });
+    overlay.addEventListener('mouseleave', function() {
+      crosshair.style.opacity = 0;
+      dots.forEach(function(d){ d.setAttribute('opacity', 0); });
+      tooltip.style.opacity = 0;
+    });
+  }
+
+  var idxRange = [];
+  for (var i = COMMON_START; i < N; i++) idxRange.push(i);
+
+  var eqMax = Math.max(Math.max.apply(null, hr.eq.slice(COMMON_START)), Math.max.apply(null, benchEq.slice(COMMON_START)));
+  var eqMin = Math.min(Math.max(1e-6, Math.min.apply(null, hr.eq.slice(COMMON_START))), Math.min.apply(null, benchEq.slice(COMMON_START)));
+  var yTicksEq = [0.25, 0.5, 1, 2, 4, 8, 16].filter(function(v){ return v >= eqMin * 0.9 && v <= eqMax * 1.1; })
+    .map(function(v){ return { v: v, label: '$' + v, base: v === 1 }; });
+  if (yTicksEq.length < 2) yTicksEq = [{v: eqMin, label: '$'+eqMin.toFixed(2)}, {v:1, label:'$1', base:true}, {v: eqMax, label: '$'+eqMax.toFixed(2)}];
+
+  makeLineChart(document.getElementById('equity-chart-wrap'), {
+    idx: idxRange,
+    lines: [
+      { data: hr.eq, color: 'var(--series-strat)', label: '126-day momentum', fmt: function(v){ return '$' + v.toFixed(2); } },
+      { data: benchEq, color: 'var(--series-bench)', label: 'Buy & hold', fmt: function(v){ return '$' + v.toFixed(2); } }
+    ]
+  }, { height: 260, log: true, yMin: Math.min(0.2, eqMin), yMax: Math.max(2, eqMax), yTicks: yTicksEq });
+
+  makeLineChart(document.getElementById('dd-chart-wrap'), {
+    idx: idxRange,
+    lines: [
+      { data: hr.underwater, color: getComputedStyle(document.querySelector('.viz-root')).getPropertyValue('--series-crit').trim(), label: 'Drawdown', fmt: function(v){ return pct(v); }, fill: true, fillColor: getComputedStyle(document.querySelector('.viz-root')).getPropertyValue('--series-crit-fill').trim() }
+    ]
+  }, { height: 110, log: false, yMin: Math.floor(hr.maxDD * 20) / 20, yMax: 0.001,
+       yTicks: [{v: 0, label: '0%', base: true}, {v: hr.maxDD, label: pct(hr.maxDD)}] });
+
+  // ================= strategy comparison table =================
+  var bestSharpe = Math.max.apply(null, strategies.map(function(s){return s.result.sharpe;}));
+  var bestDD = Math.max.apply(null, strategies.map(function(s){return s.result.maxDD;})); // least negative
+  var bestTurnover = Math.min.apply(null, strategies.map(function(s){return s.result.turnoverAnnual;}));
+  var cmpHead = '<thead><tr><th>Strategy</th><th>Sharpe</th><th>Max Drawdown</th><th>Turnover (ann.)</th><th>CAGR</th></tr></thead>';
+  var cmpRows = strategies.map(function(s) {
+    var r = s.result;
+    return '<tr class="' + (s.headline ? 'headline' : '') + '">' +
+      '<td>' + s.name + (s.headline ? ' (headline)' : '') + '</td>' +
+      '<td class="' + (r.sharpe === bestSharpe ? 'best' : '') + '">' + r.sharpe.toFixed(2) + '</td>' +
+      '<td class="' + (r.maxDD === bestDD ? 'best' : '') + '">' + pct(r.maxDD) + '</td>' +
+      '<td class="' + (r.turnoverAnnual === bestTurnover ? 'best' : '') + '">' + r.turnoverAnnual.toFixed(1) + 'x</td>' +
+      '<td>' + pct(r.cagr) + '</td>' +
+      '</tr>';
+  }).join('');
+  document.getElementById('compare-table').innerHTML = cmpHead + '<tbody>' + cmpRows + '</tbody>';
+
+  // ================= self-check: assertions run against actual output =================
+  var checks = [];
+  function check(name, passed, detail) { checks.push({ name: name, passed: !!passed, detail: detail || '' }); }
+
+  // 1. No look-ahead: pos[i] must equal signalArr[i-1] for every scored day, for every strategy.
+  strategies.forEach(function(s) {
+    var r = s.result, ok = true, firstBad = null;
+    for (var i = r.start; i < N; i++) {
+      if (r.pos[i] !== r.signalArr[i - 1]) { ok = false; firstBad = i; break; }
+    }
+    check('No look-ahead — ' + s.name, ok, ok ? 'position(t) === signal(t-1) for all ' + (N - r.start) + ' scored days' : 'mismatch at index ' + firstBad);
+  });
+
+  // 2. Signal at day i never used price data beyond day i (structural check on the raw signal arrays).
+  (function() {
+    var ok = true;
+    LOOKBACKS.forEach(function(lb) {
+      var s = momentumSignal(lb);
+      for (var i = 0; i < lb; i++) if (s[i] !== 0) { ok = false; }
+    });
+    var maS = maCrossoverSignal(MA_FAST, MA_SLOW);
+    for (var i = 0; i < MA_SLOW - 1; i++) if (maS[i] !== 0) ok = false;
+    check('Signals are flat until their own warm-up completes', ok, 'no momentum/MA signal fires before it has a full lookback window');
+  })();
+
+  // 3. No NaN/Infinity in any strategy's scored equity curve or returns.
+  strategies.forEach(function(s) {
+    var r = s.result, ok = true;
+    for (var i = r.start; i < N; i++) {
+      if (!isFinite(r.eq[i]) || !isFinite(r.stratRet[i])) { ok = false; break; }
+    }
+    check('Finite equity & returns — ' + s.name, ok);
+  });
+
+  // 4. Cost is charged if and only if the position actually changed, and is never negative.
+  strategies.forEach(function(s) {
+    var ok = true;
+    s.result.costLog.forEach(function(c) {
+      var shouldCost = c.deltaPos > 0;
+      var hasCost = c.cost > 0;
+      if (shouldCost !== hasCost || c.cost < 0) ok = false;
+    });
+    check('Cost charged only on trade days — ' + s.name, ok);
+  });
+
+  // 5. Turnover cross-check: running sum during the backtest vs. an independent post-hoc recomputation from pos[].
+  strategies.forEach(function(s) {
+    var r = s.result;
+    var independentSum = 0;
+    for (var i = r.start; i < N; i++) independentSum += Math.abs(r.pos[i] - r.pos[i - 1]);
+    var yrs = (N - 1 - r.start) / 252;
+    var independentTurnover = independentSum / yrs;
+    var ok = Math.abs(independentTurnover - r.turnoverAnnual) < 1e-9;
+    check('Turnover cross-check — ' + s.name, ok, ok ? 'engine total and independent recount agree to 1e-9' : 'engine=' + r.turnoverAnnual.toFixed(4) + ' recount=' + independentTurnover.toFixed(4));
+  });
+
+  // 6. Max drawdown cross-check via an independently-coded second implementation.
+  strategies.forEach(function(s) {
+    var r = s.result;
+    var runningMax = -Infinity, dd2 = 0;
+    for (var i = r.start; i < N; i++) {
+      runningMax = Math.max(runningMax, r.eq[i]);
+      dd2 = Math.min(dd2, r.eq[i] / runningMax - 1);
+    }
+    var ok = Math.abs(dd2 - r.maxDD) < 1e-9;
+    check('Max-drawdown cross-check — ' + s.name, ok);
+  });
+
+  // 7. All four strategies were scored over the identical common window (fair comparison).
+  (function() {
+    var ok = strategies.every(function(s){ return s.result.start === COMMON_START; }) && COMMON_START === Math.max.apply(null, LOOKBACKS.concat([MA_SLOW])) + 1;
+    check('Common evaluation window across all strategies', ok, 'every rule scored from index ' + COMMON_START + ' (' + fmtDate(dates[COMMON_START]) + ') to end of sample');
+  })();
+
+  var allPass = checks.every(function(c){ return c.passed; });
+  document.getElementById('check-summary').innerHTML =
+    '<span class="check-pill ' + (allPass ? 'pass' : 'fail') + '">' + (allPass ? 'PASS' : 'FAIL') + '</span>' +
+    '<span>' + checks.filter(function(c){return c.passed;}).length + ' / ' + checks.length + ' checks passed</span>';
+  var checkList = document.getElementById('check-list');
+  checks.forEach(function(c) {
+    var li = document.createElement('li');
+    li.innerHTML = '<span class="check-pill ' + (c.passed ? 'pass' : 'fail') + '">' + (c.passed ? 'PASS' : 'FAIL') + '</span><span><b style="color:var(--text-primary)">' + c.name + '</b>' + (c.detail ? ' — ' + c.detail : '') + '</span>';
+    checkList.appendChild(li);
+  });
+
+  // ================= calendar-year returns table (headline vs buy & hold) =================
+  function yearlyReturns(retArr, start) {
+    var out = {};
+    for (var i = start; i < N; i++) {
+      var yr = dates[i].getFullYear();
+      if (!out[yr]) out[yr] = 1;
+      out[yr] *= (1 + retArr[i]);
+    }
+    return out;
+  }
+  var stratYears = yearlyReturns(hr.stratRet, COMMON_START);
+  var benchYears = yearlyReturns(simpleRet, COMMON_START);
+  var thead = '<thead><tr><th>Year</th><th>126d Momentum</th><th>Buy &amp; Hold</th></tr></thead>';
+  var rows = Object.keys(stratYears).sort().map(function(yr) {
+    var s = stratYears[yr] - 1, b = benchYears[yr] - 1;
+    return '<tr><td>' + yr + '</td><td class="' + (s>=0?'pos':'neg') + '">' + pct(s) + '</td><td class="' + (b>=0?'pos':'neg') + '">' + pct(b) + '</td></tr>';
+  }).join('');
+  document.getElementById('returns-table').innerHTML = thead + '<tbody>' + rows + '</tbody>';
+
+  // ================= footnote =================
+  document.getElementById('footnote').innerHTML =
+    'Data: simulated, not sourced from a live market feed (' + N + ' weekday observations, ' + fmtDate(dates[0]) + ' – ' + fmtDate(dates[N-1]) +
+    '). Price model: GBM drift (' + pct(muAnnual,0) + '/yr) with GARCH(1,1) volatility clustering (long-run vol ' + pct(sigmaAnnual,0) +
+    '/yr, &alpha;=' + alpha + ', &beta;=' + beta + '), seed 20260728 for reproducibility, identical price path used for all four strategies. ' +
+    'Common evaluation window starts day ' + COMMON_START + ' (' + fmtDate(dates[COMMON_START]) + '), the first day every lookback — including the 252-day momentum rule and the 100-day MA — has a complete warm-up plus one day of execution lag. ' +
+    'Sharpe uses the sample daily mean/stdev of net strategy returns &times; &radic;252, no risk-free rate subtracted. ' +
+    'Turnover = &Sigma;|&Delta;position| / years, i.e. multiples of portfolio notional traded per year.';
+})();
+</script>

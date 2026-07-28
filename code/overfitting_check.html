@@ -1,0 +1,585 @@
+<title>Overfitting Check — Time-Series Momentum</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-page:   #f9f9f7;
+    --surface-card:   #fcfcfb;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --series-strat:   #2a78d6;
+    --series-bench:   #9a988e;
+    --series-crit:    #d03b3b;
+    --border:         rgba(11,11,11,0.10);
+    --good:           #0ca30c;
+    --good-text:      #006300;
+    --warning:        #fab219;
+    --warning-text:   #8a5a00;
+    --critical:       #d03b3b;
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-page:   #0d0d0d;
+      --surface-card:   #1a1a19;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --series-strat:   #3987e5;
+      --series-bench:   #7d7b71;
+      --series-crit:    #e66767;
+      --border:         rgba(255,255,255,0.10);
+      --good:           #0ca30c;
+      --good-text:      #0ca30c;
+      --warning:        #fab219;
+      --warning-text:   #fab219;
+      --critical:       #e66767;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-page:   #0d0d0d;
+    --surface-card:   #1a1a19;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --series-strat:   #3987e5;
+    --series-bench:   #7d7b71;
+    --series-crit:    #e66767;
+    --border:         rgba(255,255,255,0.10);
+    --good:           #0ca30c;
+    --good-text:      #0ca30c;
+    --warning:        #fab219;
+    --warning-text:   #fab219;
+    --critical:       #e66767;
+  }
+
+  * { box-sizing: border-box; }
+  .viz-root {
+    background: var(--surface-page);
+    color: var(--text-primary);
+    font-family: var(--sans);
+    padding: clamp(16px, 4vw, 40px);
+    max-width: 940px;
+    margin: 0 auto;
+  }
+  .masthead { border-bottom: 1px solid var(--border); padding-bottom: 18px; margin-bottom: 20px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-muted); margin: 0 0 8px; display: flex; gap: 10px; flex-wrap: wrap;
+  }
+  h1 { font-family: var(--serif); font-weight: 400; font-size: clamp(23px, 3.2vw, 30px); line-height: 1.15; margin: 0 0 8px; text-wrap: balance; }
+  .subhead { font-size: 13.5px; color: var(--text-secondary); max-width: 68ch; line-height: 1.55; margin: 0; }
+
+  .verdict-banner {
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    border-radius: 12px; padding: 18px 22px; margin-bottom: 22px; border: 1px solid var(--border);
+  }
+  .verdict-banner.pass { background: color-mix(in srgb, var(--good) 12%, var(--surface-card)); }
+  .verdict-banner.fail { background: color-mix(in srgb, var(--critical) 12%, var(--surface-card)); }
+  .verdict-word { font-family: var(--serif); font-size: 30px; font-weight: 400; }
+  .verdict-banner.pass .verdict-word { color: var(--good-text); }
+  .verdict-banner.fail .verdict-word { color: var(--critical); }
+  .verdict-reason { font-size: 13.5px; color: var(--text-secondary); max-width: 46ch; line-height: 1.5; }
+  .verdict-chips { display: flex; gap: 10px; flex-wrap: wrap; margin-left: auto; }
+  .verdict-chip {
+    font-family: var(--mono); font-size: 11.5px; background: var(--surface-page); border: 1px solid var(--border);
+    border-radius: 7px; padding: 6px 10px; text-align: center; min-width: 84px;
+  }
+  .verdict-chip .k { display: block; color: var(--text-muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px; }
+  .verdict-chip .v { display: block; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+
+  h2.section-title { font-family: var(--serif); font-weight: 400; font-size: 19px; margin: 30px 0 4px; }
+  h2.section-title:first-of-type { margin-top: 0; }
+  p.section-sub { font-size: 12.5px; color: var(--text-muted); margin: 0 0 14px; max-width: 72ch; line-height: 1.5; }
+
+  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+  @media (max-width: 640px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
+  .stat-card { background: var(--surface-card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .stat-label { font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 6px; }
+  .stat-value { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 21px; font-weight: 600; margin: 0; line-height: 1; }
+  .stat-note { font-size: 11.5px; color: var(--text-secondary); margin: 6px 0 0; line-height: 1.4; }
+
+  .table-card { background: var(--surface-card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 8px; }
+  .table-scroll { overflow-x: auto; }
+  table.data-table { border-collapse: collapse; width: 100%; font-size: 12.5px; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  table.data-table th, table.data-table td { text-align: right; padding: 7px 12px; border-bottom: 1px solid var(--gridline); white-space: nowrap; }
+  table.data-table th:first-child, table.data-table td:first-child { text-align: left; font-family: var(--sans); }
+  table.data-table th { color: var(--text-muted); font-weight: 500; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  table.data-table tr.hi td { color: var(--text-primary); font-weight: 600; background: color-mix(in srgb, var(--series-strat) 7%, transparent); }
+  table.data-table td.best { color: var(--good-text); font-weight: 700; }
+  table.data-table td.warn { color: var(--warning-text); font-weight: 700; }
+  table.data-table td.bad { color: var(--critical); font-weight: 700; }
+
+  .status-pill {
+    font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em;
+    padding: 2px 8px; border-radius: 5px; display: inline-block; white-space: nowrap;
+  }
+  .status-pill.ok { color: var(--good-text); background: color-mix(in srgb, var(--good) 16%, transparent); }
+  .status-pill.watch { color: var(--warning-text); background: color-mix(in srgb, var(--warning) 22%, transparent); }
+  .status-pill.blocker { color: var(--critical); background: color-mix(in srgb, var(--critical) 16%, transparent); }
+
+  .verdict-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 14px 0 8px; }
+  @media (max-width: 640px) { .verdict-columns { grid-template-columns: 1fr; } }
+  .verdict-col { background: var(--surface-card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .verdict-col h3 { font-family: var(--serif); font-weight: 400; font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+  .verdict-col.blockers { border-left: 3px solid var(--critical); }
+  .verdict-col.watchouts { border-left: 3px solid var(--warning); }
+  .verdict-col ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
+  .verdict-col li { font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; }
+  .verdict-col li b { color: var(--text-primary); }
+  .verdict-col .none { font-size: 12.5px; color: var(--text-muted); font-style: italic; }
+
+  footer.note { font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 14px; margin-top: 24px; line-height: 1.65; }
+  footer.note code { font-family: var(--mono); }
+</style>
+
+<div class="viz-root">
+  <div class="masthead">
+    <p class="eyebrow"><span id="doc-date"></span><span>&middot;</span><span>Quant Research &middot; Overfitting Review</span></p>
+    <h1>Overfitting Check: Time-Series Momentum</h1>
+    <p class="subhead">Follow-up to the momentum-lookback backtest (63/126/252-day + 20/100-day MA crossover) on the same simulated 10-year index, same seed, same 1bp cost and 1-day execution lag. This note asks the harder question: is the outperformance real, or the best-looking draw from a parameter search?</p>
+  </div>
+
+  <div class="verdict-banner" id="verdict-banner">
+    <div>
+      <div class="verdict-word" id="verdict-word">&hellip;</div>
+      <div class="verdict-reason" id="verdict-reason"></div>
+    </div>
+    <div class="verdict-chips" id="verdict-chips"></div>
+  </div>
+
+  <h2 class="section-title">1&#41; Walk-forward test</h2>
+  <p class="section-sub" id="wf-sub"></p>
+  <div class="table-card">
+    <div class="table-scroll">
+      <table class="data-table" id="wf-table"></table>
+    </div>
+  </div>
+  <div class="stat-row" id="wf-stats"></div>
+
+  <h2 class="section-title">2&#41; Deflated Sharpe Ratio (DSR)</h2>
+  <p class="section-sub">Corrects the best full-sample Sharpe for the number of parameter settings tried. Trial universe: momentum lookbacks {21, 42, 63, 84, 126, 168, 189, 252} plus the 20/100-day MA crossover &mdash; 9 configurations, the realistic search space behind the last backtest's headline pick.</p>
+  <div class="stat-row" id="dsr-stats"></div>
+
+  <h2 class="section-title">3&#41; Probability of Backtest Overfitting (PBO)</h2>
+  <p class="section-sub">Combinatorially Symmetric Cross-Validation (Bailey, Borwein, L&oacute;pez de Prado &amp; Zhu, 2014) over the same 9 configurations: split the sample into 16 blocks, form every 8-vs-8 train/test split, pick the in-sample winner each time, and see how often it lands below the out-of-sample median.</p>
+  <div class="stat-row" id="pbo-stats"></div>
+
+  <h2 class="section-title">4&#41; Cost sensitivity</h2>
+  <p class="section-sub">Same four strategies from the last backtest, Sharpe recomputed at 0, 1, 5, 10 and 20bp per unit of position traded (full sample).</p>
+  <div class="table-card">
+    <div class="table-scroll">
+      <table class="data-table" id="cost-table"></table>
+    </div>
+  </div>
+
+  <h2 class="section-title">Parameter stability</h2>
+  <p class="section-sub" id="stability-sub"></p>
+  <div class="table-card">
+    <div class="table-scroll">
+      <table class="data-table" id="stability-table"></table>
+    </div>
+  </div>
+
+  <h2 class="section-title">5&#41; Verdict &mdash; blockers vs. watch-outs</h2>
+  <p class="section-sub">Blockers are reasons not to trade this as-is. Watch-outs are reasons to size it small, monitor closely, or keep searching &mdash; not disqualifying on their own.</p>
+  <div class="verdict-columns">
+    <div class="verdict-col blockers">
+      <h3><span class="status-pill blocker">BLOCKERS</span></h3>
+      <ul id="blockers-list"></ul>
+    </div>
+    <div class="verdict-col watchouts">
+      <h3><span class="status-pill watch">WATCH-OUTS</span></h3>
+      <ul id="watchouts-list"></ul>
+    </div>
+  </div>
+
+  <footer class="note" id="footnote"></footer>
+</div>
+
+<script>
+(function() {
+  "use strict";
+
+  // ================= seeded RNG + price path — IDENTICAL to the prior backtest =================
+  function mulberry32(seed) {
+    return function() {
+      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+      var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  var rand = mulberry32(20260728);
+  var spareNormal = null;
+  function randn() {
+    if (spareNormal !== null) { var s = spareNormal; spareNormal = null; return s; }
+    var u1 = Math.max(rand(), 1e-12), u2 = rand();
+    var r = Math.sqrt(-2 * Math.log(u1));
+    spareNormal = r * Math.sin(2 * Math.PI * u2);
+    return r * Math.cos(2 * Math.PI * u2);
+  }
+  function buildTradingDays(nDays) {
+    var end = new Date(2026, 6, 28);
+    var days = [], d = new Date(end);
+    while (days.length < nDays) { if (d.getDay() !== 0 && d.getDay() !== 6) days.push(new Date(d)); d.setDate(d.getDate() - 1); }
+    return days.reverse();
+  }
+  var N = 10 * 252;
+  var dates = buildTradingDays(N);
+  var muAnnual = 0.08, sigmaAnnual = 0.18;
+  var sigmaDaily2LR = (sigmaAnnual * sigmaAnnual) / 252;
+  var alpha = 0.08, beta = 0.90;
+  var omega = sigmaDaily2LR * (1 - alpha - beta);
+  var muDaily = muAnnual / 252;
+  var prices = new Array(N);
+  var sigma2 = sigmaDaily2LR, lastEps = 0, p = 1000;
+  for (var i = 0; i < N; i++) {
+    sigma2 = omega + alpha * lastEps * lastEps + beta * sigma2;
+    var sigma = Math.sqrt(sigma2), z = randn();
+    var r = muDaily - 0.5 * sigma2 + sigma * z;
+    lastEps = sigma * z; p = p * Math.exp(r); prices[i] = p;
+  }
+  var simpleRet = new Array(N).fill(0);
+  for (var i = 1; i < N; i++) simpleRet[i] = prices[i] / prices[i - 1] - 1;
+
+  // ================= signal generators =================
+  function momentumSignal(lookback) {
+    var s = new Array(N).fill(0);
+    for (var i = lookback; i < N; i++) { var mom = prices[i] / prices[i - lookback] - 1; s[i] = mom > 0 ? 1 : (mom < 0 ? -1 : 0); }
+    return s;
+  }
+  function movingAverage(window) {
+    var ma = new Array(N).fill(NaN), sum = 0;
+    for (var i = 0; i < N; i++) { sum += prices[i]; if (i >= window) sum -= prices[i - window]; if (i >= window - 1) ma[i] = sum / window; }
+    return ma;
+  }
+  function maCrossoverSignal(fast, slow) {
+    var mf = movingAverage(fast), ms = movingAverage(slow), s = new Array(N).fill(0);
+    for (var i = slow - 1; i < N; i++) { if (isNaN(mf[i]) || isNaN(ms[i])) continue; s[i] = mf[i] > ms[i] ? 1 : (mf[i] < ms[i] ? -1 : 0); }
+    return s;
+  }
+
+  var LOOKBACK_GRID = [21, 42, 63, 84, 126, 168, 189, 252];
+  var MA_FAST = 20, MA_SLOW = 100;
+  var COMMON_START = Math.max.apply(null, LOOKBACK_GRID.concat([MA_SLOW])) + 1; // 253
+
+  var TRIALS = LOOKBACK_GRID.map(function(lb) { return { key: 'mom' + lb, label: lb + 'd momentum', signal: momentumSignal(lb) }; })
+    .concat([{ key: 'ma20_100', label: '20/100 MA crossover', signal: maCrossoverSignal(MA_FAST, MA_SLOW) }]);
+
+  // ================= backtest engine (position lag 1, cost in bp) =================
+  function backtestRange(signalArr, start, end, costBp) {
+    // returns per-day net strategy return array over [start, end], continuous with pre-start position history
+    var out = new Array(end - start + 1);
+    var prevPos = start > 0 ? signalArr[start - 2] : 0; // position held the day BEFORE `start` (signal known one day earlier)
+    for (var i = start; i <= end; i++) {
+      var pos = signalArr[i - 1];
+      var deltaPos = Math.abs(pos - prevPos);
+      out[i - start] = pos * simpleRet[i] - deltaPos * costBp;
+      prevPos = pos;
+    }
+    return out;
+  }
+  function mean(arr) { return arr.reduce(function(a,b){return a+b;},0) / arr.length; }
+  function std(arr) { var m = mean(arr); return Math.sqrt(arr.reduce(function(a,b){return a+(b-m)*(b-m);},0) / (arr.length - 1)); }
+  function sharpeOf(retArr) { var m = mean(retArr), s = std(retArr); return s > 0 ? (m / s) * Math.sqrt(252) : 0; }
+  function dailySharpeOf(retArr) { var m = mean(retArr), s = std(retArr); return s > 0 ? m / s : 0; }
+  function cagrOf(retArr) { var eq = 1; retArr.forEach(function(r){ eq *= (1+r); }); return Math.pow(eq, 252/retArr.length) - 1; }
+  function turnoverAnnualOf(signalArr, start, end) {
+    var sum = 0; var prevPos = signalArr[start - 2] || 0;
+    for (var i = start; i <= end; i++) { var pos = signalArr[i-1]; sum += Math.abs(pos - prevPos); prevPos = pos; }
+    return sum / ((end - start + 1) / 252);
+  }
+  function pct(x, d) { return (x * 100).toFixed(d === undefined ? 1 : d) + '%'; }
+  function fmtDate(d) { return d.toLocaleDateString('en-US', {year:'numeric', month:'short'}); }
+
+  // ================= 1) Walk-forward =================
+  var K = 5, M = N - COMMON_START;
+  var winLen = Math.floor(M / K);
+  var folds = [];
+  for (var k = 0; k < K; k++) {
+    var testStart = COMMON_START + k * winLen;
+    var testEnd = (k === K - 1) ? N - 1 : COMMON_START + (k + 1) * winLen - 1;
+    folds.push({ k: k, testStart: testStart, testEnd: testEnd });
+  }
+  var wfRows = [];
+  var pooledOOS = [];
+  var inSampleSharpes = [];
+  for (var k = 1; k < K; k++) {
+    var f = folds[k];
+    var trainStart = COMMON_START, trainEnd = f.testStart - 1;
+    var bestTrial = null, bestIS = -Infinity;
+    TRIALS.forEach(function(t) {
+      var isRet = backtestRange(t.signal, trainStart, trainEnd, 0.0001);
+      var isSharpe = sharpeOf(isRet);
+      if (isSharpe > bestIS) { bestIS = isSharpe; bestTrial = t; }
+    });
+    var oosRet = backtestRange(bestTrial.signal, f.testStart, f.testEnd, 0.0001);
+    var oosSharpe = sharpeOf(oosRet);
+    pooledOOS = pooledOOS.concat(oosRet);
+    inSampleSharpes.push(bestIS);
+    wfRows.push({
+      fold: k, trainRange: fmtDate(dates[trainStart]) + ' → ' + fmtDate(dates[trainEnd]),
+      testRange: fmtDate(dates[f.testStart]) + ' → ' + fmtDate(dates[f.testEnd]),
+      param: bestTrial.label, isSharpe: bestIS, oosSharpe: oosSharpe
+    });
+  }
+  var pooledOOSSharpe = sharpeOf(pooledOOS);
+  var meanISSharpe = mean(inSampleSharpes);
+  var degradation = meanISSharpe !== 0 ? pooledOOSSharpe / meanISSharpe : 0;
+
+  // ================= full-sample stats for every trial (needed by DSR & PBO) =================
+  var trialFullRet = {}; // key -> return array over [COMMON_START, N-1] at 1bp
+  var trialFullSharpe = {}; // annualized
+  var trialFullDailySharpe = {}; // per-period, for DSR
+  TRIALS.forEach(function(t) {
+    var ret = backtestRange(t.signal, COMMON_START, N - 1, 0.0001);
+    trialFullRet[t.key] = ret;
+    trialFullSharpe[t.key] = sharpeOf(ret);
+    trialFullDailySharpe[t.key] = dailySharpeOf(ret);
+  });
+  var bestKey = TRIALS.reduce(function(best, t) { return trialFullSharpe[t.key] > trialFullSharpe[best] ? t.key : best; }, TRIALS[0].key);
+  var bestTrialLabel = TRIALS.filter(function(t){return t.key===bestKey;})[0].label;
+
+  // ================= 2) Deflated Sharpe Ratio =================
+  function erf(x) {
+    var sign = x < 0 ? -1 : 1; x = Math.abs(x);
+    var a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,pp=0.3275911;
+    var t = 1/(1+pp*x);
+    var y = 1-(((((a5*t+a4)*t)+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);
+    return sign*y;
+  }
+  function normalCDF(x) { return 0.5*(1+erf(x/Math.SQRT2)); }
+  function probit(pr) {
+    if (pr <= 0) return -Infinity; if (pr >= 1) return Infinity;
+    var a=[-3.969683028665376e+01,2.209460984245205e+02,-2.759285104469687e+02,1.383577518672690e+02,-3.066479806614716e+01,2.506628277459239e+00];
+    var b=[-5.447609879822406e+01,1.615858368580409e+02,-1.556989798598866e+02,6.680131188771972e+01,-1.328068155288572e+01];
+    var c=[-7.784894002430293e-03,-3.223964580411365e-01,-2.400758277161838e+00,-2.549732539343734e+00,4.374664141464968e+00,2.938163982698783e+00];
+    var d=[7.784695709041462e-03,3.224671290700398e-01,2.445134137142996e+00,3.754408661907416e+00];
+    var plow=0.02425, phigh=1-plow, q, r;
+    if (pr<plow) { q=Math.sqrt(-2*Math.log(pr)); return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1); }
+    else if (pr<=phigh) { q=pr-0.5; r=q*q; return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1); }
+    else { q=Math.sqrt(-2*Math.log(1-pr)); return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1); }
+  }
+  var N_TRIALS = TRIALS.length;
+  var dailySharpes = TRIALS.map(function(t){ return trialFullDailySharpe[t.key]; });
+  var sigmaSR = std(dailySharpes);
+  var EULER_GAMMA = 0.5772156649015329;
+  var SR0 = sigmaSR * ((1 - EULER_GAMMA) * probit(1 - 1/N_TRIALS) + EULER_GAMMA * probit(1 - 1/(N_TRIALS * Math.E)));
+  var bestRet = trialFullRet[bestKey];
+  var SRhat = trialFullDailySharpe[bestKey];
+  var Tobs = bestRet.length;
+  var mBest = mean(bestRet);
+  var m2 = mean(bestRet.map(function(x){return Math.pow(x-mBest,2);}));
+  var m3 = mean(bestRet.map(function(x){return Math.pow(x-mBest,3);}));
+  var m4 = mean(bestRet.map(function(x){return Math.pow(x-mBest,4);}));
+  var skew = m3 / Math.pow(m2, 1.5);
+  var kurt = m4 / Math.pow(m2, 2); // non-excess (normal = 3)
+  var dsrNumerator = (SRhat - SR0) * Math.sqrt(Tobs - 1);
+  var dsrDenominator = Math.sqrt(Math.max(1e-9, 1 - skew*SRhat + ((kurt-1)/4)*SRhat*SRhat));
+  var DSR = normalCDF(dsrNumerator / dsrDenominator);
+
+  // ================= 3) PBO via CSCV =================
+  var S = 16;
+  var blockSize = Math.floor(M / S);
+  var blockRanges = [];
+  for (var b = 0; b < S; b++) {
+    var bs = COMMON_START + b * blockSize;
+    var be = (b === S - 1) ? N - 1 : COMMON_START + (b + 1) * blockSize - 1;
+    blockRanges.push([bs, be]);
+  }
+  var blockSum = {}, blockSumSq = {}, blockCount = [];
+  blockRanges.forEach(function(rng){ blockCount.push(rng[1]-rng[0]+1); });
+  TRIALS.forEach(function(t) {
+    blockSum[t.key] = new Array(S).fill(0);
+    blockSumSq[t.key] = new Array(S).fill(0);
+    var ret = trialFullRet[t.key]; // aligned to COMMON_START..N-1
+    blockRanges.forEach(function(rng, b) {
+      var s = 0, sq = 0;
+      for (var i = rng[0]; i <= rng[1]; i++) { var v = ret[i - COMMON_START]; s += v; sq += v*v; }
+      blockSum[t.key][b] = s; blockSumSq[t.key][b] = sq;
+    });
+  });
+  function groupSharpe(key, blockList) {
+    var s = 0, sq = 0, n = 0;
+    blockList.forEach(function(b) { s += blockSum[key][b]; sq += blockSumSq[key][b]; n += blockCount[b]; });
+    var m = s / n, variance = Math.max(1e-12, sq / n - m*m);
+    return (m / Math.sqrt(variance)) * Math.sqrt(252);
+  }
+  var overfitCount = 0, totalCombos = 0;
+  for (var mask = 0; mask < (1 << S); mask++) {
+    var pc = 0, tmp = mask;
+    while (tmp) { pc += tmp & 1; tmp >>= 1; }
+    if (pc !== S/2) continue;
+    totalCombos++;
+    var trainBlocks = [], testBlocks = [];
+    for (var b = 0; b < S; b++) { if (mask & (1 << b)) trainBlocks.push(b); else testBlocks.push(b); }
+    var bestKeyC = null, bestTrainSharpe = -Infinity;
+    var testSharpes = {};
+    TRIALS.forEach(function(t) {
+      var trS = groupSharpe(t.key, trainBlocks);
+      testSharpes[t.key] = groupSharpe(t.key, testBlocks);
+      if (trS > bestTrainSharpe) { bestTrainSharpe = trS; bestKeyC = t.key; }
+    });
+    var vals = TRIALS.map(function(t){ return testSharpes[t.key]; }).sort(function(a,b){return a-b;});
+    var winnerTestVal = testSharpes[bestKeyC];
+    var rank = vals.indexOf(winnerTestVal) + 1; // 1 = worst .. N = best
+    var omega = rank / (N_TRIALS + 1);
+    var lambda = Math.log(omega / (1 - omega));
+    if (lambda < 0) overfitCount++;
+  }
+  var PBO = overfitCount / totalCombos;
+
+  // ================= 4) Cost sensitivity =================
+  var HEADLINE = { key: 'mom126', label: '126-day momentum (headline)', signal: momentumSignal(126) };
+  var COST_ROWS = [
+    { key: 'mom63', label: '63-day momentum', signal: momentumSignal(63) },
+    HEADLINE,
+    { key: 'mom252', label: '252-day momentum', signal: momentumSignal(252) },
+    { key: 'ma20_100', label: '20/100 MA crossover', signal: maCrossoverSignal(MA_FAST, MA_SLOW) }
+  ];
+  var COST_LEVELS = [0, 0.0001, 0.0005, 0.0010, 0.0020];
+  var costResults = COST_ROWS.map(function(row) {
+    var sharpes = COST_LEVELS.map(function(c) { return sharpeOf(backtestRange(row.signal, COMMON_START, N - 1, c)); });
+    return { label: row.label, sharpes: sharpes };
+  });
+  var headlineCostRow = costResults.filter(function(r){ return r.label.indexOf('headline') !== -1; })[0];
+  var breakEvenBp = null;
+  for (var bpTest = 0; bpTest <= 50; bpTest += 0.5) {
+    var sh = sharpeOf(backtestRange(HEADLINE.signal, COMMON_START, N - 1, bpTest/10000));
+    if (sh <= 0) { breakEvenBp = bpTest; break; }
+  }
+
+  // ================= parameter stability (full-sample Sharpe by lookback) =================
+  var stabilityRows = LOOKBACK_GRID.map(function(lb) {
+    var sig = momentumSignal(lb);
+    var ret = backtestRange(sig, COMMON_START, N - 1, 0.0001);
+    return { lb: lb, sharpe: sharpeOf(ret), cagr: cagrOf(ret), turnover: turnoverAnnualOf(sig, COMMON_START, N - 1) };
+  });
+  var maxAdjJump = 0;
+  for (var i = 1; i < stabilityRows.length; i++) maxAdjJump = Math.max(maxAdjJump, Math.abs(stabilityRows[i].sharpe - stabilityRows[i-1].sharpe));
+
+  // ================= render: header date =================
+  document.getElementById('doc-date').textContent = '28 Jul 2026';
+
+  // ---- walk-forward table ----
+  document.getElementById('wf-sub').textContent = 'Anchored (expanding) walk-forward, ' + (K-1) + ' out-of-sample folds after an initial ' + winLen + '-day training-only burn-in. In each fold the best lookback/rule is picked purely from data before the fold, then applied untouched to the fold it has never seen.';
+  var wfHead = '<thead><tr><th>Fold</th><th>Train window</th><th>Test window</th><th>Selected on train</th><th>In-sample Sharpe</th><th>Out-of-sample Sharpe</th></tr></thead>';
+  var wfBody = wfRows.map(function(r) {
+    return '<tr><td>' + r.fold + '</td><td>' + r.trainRange + '</td><td>' + r.testRange + '</td><td>' + r.param + '</td><td>' + r.isSharpe.toFixed(2) + '</td><td class="' + (r.oosSharpe <= 0 ? 'bad' : '') + '">' + r.oosSharpe.toFixed(2) + '</td></tr>';
+  }).join('');
+  document.getElementById('wf-table').innerHTML = wfHead + '<tbody>' + wfBody + '</tbody>';
+  document.getElementById('wf-stats').innerHTML = [
+    { label: 'Pooled OOS Sharpe', value: pooledOOSSharpe.toFixed(2), note: 'all ' + (K-1) + ' out-of-sample folds stitched into one series' },
+    { label: 'Mean in-sample Sharpe', value: meanISSharpe.toFixed(2), note: 'average of the picks that looked best on training data' },
+    { label: 'OOS / in-sample ratio', value: (degradation*100).toFixed(0) + '%', note: 'how much performance survives leaving the training data' }
+  ].map(function(s){ return '<div class="stat-card"><p class="stat-label">'+s.label+'</p><p class="stat-value">'+s.value+'</p><p class="stat-note">'+s.note+'</p></div>'; }).join('');
+
+  // ---- DSR ----
+  document.getElementById('dsr-stats').innerHTML = [
+    { label: 'Best full-sample trial', value: bestTrialLabel, note: 'annualised Sharpe ' + trialFullSharpe[bestKey].toFixed(2) },
+    { label: 'Expected max Sharpe (luck)', value: (SR0*Math.sqrt(252)).toFixed(2), note: 'what the best of ' + N_TRIALS + ' random trials would show with zero true skill' },
+    { label: 'Deflated Sharpe Ratio', value: DSR.toFixed(3), note: 'probability the true Sharpe exceeds 0, after the multiple-testing penalty' },
+    { label: 'Skew / Kurtosis used', value: skew.toFixed(2) + ' / ' + kurt.toFixed(2), note: 'non-normality of the winning strategy’s daily returns' }
+  ].map(function(s){ return '<div class="stat-card"><p class="stat-label">'+s.label+'</p><p class="stat-value" style="font-size:16px">'+s.value+'</p><p class="stat-note">'+s.note+'</p></div>'; }).join('');
+
+  // ---- PBO ----
+  document.getElementById('pbo-stats').innerHTML = [
+    { label: 'PBO', value: pct(PBO,1), note: 'share of the ' + totalCombos.toLocaleString() + ' 8-vs-8 splits where the in-sample winner finished below the out-of-sample median' },
+    { label: 'CSCV combinations', value: totalCombos.toLocaleString(), note: 'C(16,8), every train/test split checked, not sampled' },
+    { label: 'Blocks (S)', value: S, note: blockSize + '-ish trading days per block' },
+    { label: 'Trial universe (N)', value: N_TRIALS, note: 'same 9 configurations used for DSR' }
+  ].map(function(s){ return '<div class="stat-card"><p class="stat-label">'+s.label+'</p><p class="stat-value">'+s.value+'</p><p class="stat-note">'+s.note+'</p></div>'; }).join('');
+
+  // ---- cost sensitivity table ----
+  var costHead = '<thead><tr><th>Strategy</th>' + COST_LEVELS.map(function(c){ return '<th>' + (c*10000) + 'bp</th>'; }).join('') + '</tr></thead>';
+  var costBody = costResults.map(function(r) {
+    var isHeadline = r.label.indexOf('headline') !== -1;
+    var cells = r.sharpes.map(function(v){ return '<td class="' + (v<=0?'bad':'') + '">' + v.toFixed(2) + '</td>'; }).join('');
+    return '<tr class="' + (isHeadline?'hi':'') + '"><td>' + r.label + '</td>' + cells + '</tr>';
+  }).join('');
+  document.getElementById('cost-table').innerHTML = costHead + '<tbody>' + costBody + '</tbody>';
+
+  // ---- parameter stability table ----
+  document.getElementById('stability-sub').textContent = 'Full-sample annualised Sharpe across nearby lookbacks (1bp cost). Largest jump between adjacent lookbacks: ' + maxAdjJump.toFixed(2) + ' Sharpe.';
+  var stabHead = '<thead><tr><th>Lookback</th><th>Sharpe</th><th>CAGR</th><th>Turnover (ann.)</th></tr></thead>';
+  var stabBody = stabilityRows.map(function(r) {
+    return '<tr><td>' + r.lb + 'd</td><td>' + r.sharpe.toFixed(2) + '</td><td>' + pct(r.cagr) + '</td><td>' + r.turnover.toFixed(1) + 'x</td></tr>';
+  }).join('');
+  document.getElementById('stability-table').innerHTML = stabHead + '<tbody>' + stabBody + '</tbody>';
+
+  // ================= VERDICT LOGIC (thresholds stated in footnote) =================
+  var blockers = [], watchouts = [];
+
+  if (pooledOOSSharpe <= 0) {
+    blockers.push('<b>Walk-forward Sharpe is non-positive (' + pooledOOSSharpe.toFixed(2) + ')</b> — parameters picked on training data lost money the moment they saw new data.');
+  } else if (pooledOOSSharpe < 0.30) {
+    watchouts.push('<b>Weak walk-forward Sharpe (' + pooledOOSSharpe.toFixed(2) + ')</b> — positive but thin; easily erased by real-world frictions not modelled here.');
+  }
+  if (degradation < 0.5 && pooledOOSSharpe > 0) {
+    watchouts.push('<b>Large in-sample &rarr; out-of-sample drop-off (' + (degradation*100).toFixed(0) + '% of in-sample Sharpe survives)</b> — training-set performance is not a reliable guide to the next window.');
+  }
+
+  if (DSR < 0.90) {
+    blockers.push('<b>Deflated Sharpe Ratio ' + DSR.toFixed(3) + '</b> — after penalising for testing ' + N_TRIALS + ' parameter settings, we cannot distinguish the best result from luck at a reasonable confidence level.');
+  } else if (DSR < 0.95) {
+    watchouts.push('<b>Deflated Sharpe Ratio ' + DSR.toFixed(3) + '</b> — positive but under the conventional 0.95 bar; treat the "best" setting as provisional.');
+  }
+
+  if (PBO > 0.5) {
+    blockers.push('<b>PBO ' + pct(PBO,1) + '</b> — in more than half of resampled train/test splits, the in-sample winner underperforms the out-of-sample median. The selection process itself is not reliable.');
+  } else if (PBO >= 0.2) {
+    watchouts.push('<b>PBO ' + pct(PBO,1) + '</b> — a non-trivial chance the "best" lookback is an artefact of this particular sample, even though it is under the 50% red line.');
+  }
+
+  if (breakEvenBp !== null && breakEvenBp <= 10) {
+    blockers.push('<b>Headline strategy breaks even at only ' + breakEvenBp + 'bp</b> — well inside plausible real-world cost/slippage for a system that trades this often.');
+  } else if (breakEvenBp !== null && breakEvenBp <= 20) {
+    watchouts.push('<b>Cost fragility</b> — headline Sharpe reaches zero at ' + breakEvenBp + 'bp; comfortable at the assumed 1bp but not far from it.');
+  }
+
+  if (maxAdjJump > 0.25) {
+    watchouts.push('<b>Unstable parameter surface</b> — Sharpe swings by up to ' + maxAdjJump.toFixed(2) + ' between neighbouring lookbacks, a sign the "best" lookback may just be a lucky grid point rather than a stable edge.');
+  }
+
+  if (blockers.length === 0) blockers.push('<span class="none">None identified against the thresholds in this note.</span>');
+  if (watchouts.length === 0) watchouts.push('<span class="none">None identified against the thresholds in this note.</span>');
+
+  var realBlockerCount = blockers.filter(function(b){ return b.indexOf('None identified') === -1; }).length;
+  var verdictPass = realBlockerCount === 0;
+
+  document.getElementById('blockers-list').innerHTML = blockers.map(function(b){ return '<li>' + b + '</li>'; }).join('');
+  document.getElementById('watchouts-list').innerHTML = watchouts.map(function(w){ return '<li>' + w + '</li>'; }).join('');
+
+  var banner = document.getElementById('verdict-banner');
+  banner.classList.add(verdictPass ? 'pass' : 'fail');
+  document.getElementById('verdict-word').textContent = verdictPass ? 'PASS' : 'FAIL';
+  document.getElementById('verdict-reason').textContent = verdictPass
+    ? 'No blocking issues found, but see the watch-outs before sizing this up — none of the four tests came back strongly positive.'
+    : realBlockerCount + ' blocking issue' + (realBlockerCount>1?'s':'') + ' found: this strategy, as specified, should not be traded on this evidence alone.';
+  document.getElementById('verdict-chips').innerHTML = [
+    { k: 'WF OOS Sharpe', v: pooledOOSSharpe.toFixed(2) },
+    { k: 'DSR', v: DSR.toFixed(2) },
+    { k: 'PBO', v: pct(PBO,0) },
+    { k: 'Cost breakeven', v: (breakEvenBp===null?'>50bp':breakEvenBp+'bp') }
+  ].map(function(c){ return '<div class="verdict-chip"><span class="k">'+c.k+'</span><span class="v">'+c.v+'</span></div>'; }).join('');
+
+  // ================= footnote =================
+  document.getElementById('footnote').innerHTML =
+    'Same simulated price path as the prior backtest (GBM 8%/yr drift + GARCH(1,1) vol clustering, seed 20260728, ' + N + ' weekday observations). ' +
+    'Trial universe for DSR/PBO: momentum lookbacks {21,42,63,84,126,168,189,252} plus 20/100 MA crossover (N=' + N_TRIALS + ') — a stand-in for the realistic grid a researcher would scan before settling on the last note’s 63/126/252-day comparison; this is a modelling choice and changes the deflation magnitude. ' +
+    'DSR follows Bailey &amp; López de Prado (2014); PBO follows the CSCV method of Bailey, Borwein, López de Prado &amp; Zhu (2014), S=16 blocks, all C(16,8)=' + totalCombos.toLocaleString() + ' splits enumerated exactly (no sampling). ' +
+    'Thresholds used for the verdict (stated so they can be argued with, not black-boxed): walk-forward OOS Sharpe &le;0 or DSR &lt;0.90 or PBO &gt;50% or cost-breakeven &le;10bp = blocker; OOS Sharpe &lt;0.30, DSR &lt;0.95, PBO 20–50%, cost-breakeven 10–20bp, or adjacent-lookback Sharpe swing &gt;0.25 = watch-out. ' +
+    'Single simulated price path — conclusions describe this backtest’s robustness to search and cost assumptions, not a guarantee about live markets.';
+})();
+</script>
